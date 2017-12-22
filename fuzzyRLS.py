@@ -78,36 +78,39 @@ def sample_entropy(x, m=2, r=0, distance="chebyshev"):
 
 
 # Sinus Parameters
-data_length = 10000
+data_length = 1000
 frequency = 0.1
-change_point = 5000
+change_point = 614 #3140
 changed_frequency = 0.11
 y = np.zeros(data_length)
 d = np.zeros(data_length)
 for k in range(data_length):
-    if k == change_point:
-        frequency = changed_frequency
-    y[k] = np.sin(k * frequency)
-    d[k] = np.sin(k * frequency)
+    if k >= change_point:
+
+        y[k] = 1 * np.sin(k * changed_frequency)
+        d[k] = 1*np.sin(k * changed_frequency)
+    else:
+        y[k] = np.sin(k * frequency)
+        d[k] = np.sin(k * frequency)
 
 plt.plot(y)
 plt.show()
 
 # fuzzy system parameters
-n_input_sets = 30
+n_input_sets = 5
 n_inputs = 2
 rules_number = n_input_sets ** n_inputs
 
 input_sets_centers = np.linspace(np.amin(y), np.amax(y), n_input_sets)
-input_sets_width = 2 * abs(input_sets_centers[1] - input_sets_centers[0])
+input_sets_width = abs(input_sets_centers[1] - input_sets_centers[0])
 # print(input_sets_centers)
 # print(input_sets_width)
 step = abs((np.amin(y) - np.amax(y)) / (rules_number - 1))
 # theta = np.linspace(np.amin(y), np.amax(y), rules_number)
-theta = np.zeros((1, rules_number))
+theta = np.zeros((rules_number, 1))
 # print(theta.shape)
 for i in range(rules_number):
-    theta[0, i] = np.amin(y) + i * step
+    theta[i, 0] = np.amin(y) + i * step
 
 b = np.zeros((rules_number, 1))
 
@@ -122,20 +125,20 @@ mf2 = np.zeros((n_input_sets, 1))
 input_data = np.zeros((n_inputs, 1))
 
 P = np.zeros((rules_number, rules_number))
-np.fill_diagonal(P, 10000)
+np.fill_diagonal(P, 10 ** 9)
 
 output_data = 0
 fuzzy_output = np.zeros((data_length, 1))
-K = 0
+K = np.zeros((rules_number, 1))
 error = np.zeros((data_length, 1))
-w = np.zeros((rules_number, data_length))
+w = np.zeros((data_length, rules_number))
 print(b.shape)
 
 for p in range(10, data_length - 1):
     input_data[0] = y[p - 1]
     input_data[1] = y[p - 10]
     output_data = y[p]
-    print p
+    w[p, :] = np.transpose(theta[:])
     for j in range(n_input_sets):
         if j == 0:
             # trapezoid
@@ -162,29 +165,60 @@ for p in range(10, data_length - 1):
     # print("b: ", (b.shape))
     # fuzzy_output[p] = np.dot(np.transpose(b), theta)
     for k in range(rules_number):
-        fuzzy_output[p] = b[k] * theta[0, k] + fuzzy_output[p]
-    print("fuzzy_out:", fuzzy_output[p])
-    print("data out:", output_data)
+        fuzzy_output[p] = b[k] * theta[k, 0] + fuzzy_output[p]
+    # print("fuzzy_out:", fuzzy_output[p])
+    # print("data out:", output_data)
     # print(pomoc)
     error[p] = output_data - fuzzy_output[p]
+
+    # print("b shape:", b.shape)
+    # pomoc1 = np.dot(np.transpose(b), theta)
+    # print("pomoc1 shape: ", pomoc1.shape)
+    K = np.matmul(P, b)
+    jmenovatel = np.matmul(np.transpose(b), P)
+    jmenovatel = np.matmul(jmenovatel, b)
+    jmenovatel = np.add(jmenovatel, 1)
+    K = np.divide(K, jmenovatel)
+    # / (np.transpose(b) * P * b + 1)
+    # print("HIOVNO:",(output_data - fuzzy_output))
+    hovno = np.matmul(K, error[p])
+
+    theta = np.add(theta, K * error[p])
+
+    pomocna = np.matmul(np.transpose(b), P)
+    pomocna = np.matmul(pomocna, b)
+    pomocna = pomocna + 1
+    pomocna = np.matmul(pomocna, np.transpose(b))
+    pomocna = np.matmul(pomocna,P)
+    pomocna = np.multiply(pomocna, -1)
+    # P = P - (P * b / (np.transpose(b) * P * b + 1)) * np.transpose(b) * P
+    np.add(P, pomocna)
+    # print("P:", P)
+    print("p =", p)
+    # w[p, :] = np.transpose(theta[:])
     print(error[p])
-    theta = np.add(theta,K * (output_data - np.transpose(b) * theta))
-    K = P * b / (np.transpose(b) * P * b + 1)
-    P = P - (P * b / (np.transpose(b) * P * b + 1)) * np.transpose(b) * P
-    print("theta shape:", theta.shape)
-    w[:, p] = theta
-e = abs(error)
-plt.plot(error)
+    print(np.amax(theta))
+e = np.abs(error)
+e = np.transpose(e)
+plt.plot(abs(error))
+plt.title('err')
 plt.show()
 
 # get ELBND
 elbnd = pa.detection.ELBND(w, e, function="sum")
-
-# get LE
-le = pa.detection.learning_entropy(w, m=1000, order=1, alpha=[6., 6.5, 7., 7.5, 8., 8.5, 9., 9.5, 10.])
+a = [1000., 20000., 10000., 1000000., 5000., 500., 105., 10.]
+# get LE m = 10 nebo 100
+le = pa.detection.learning_entropy((w), m=100, order=1, alpha=a)
+dw = np.zeros(w.shape)
+dw[0:-1] = np.abs(np.diff(w, axis=0))
 
 plt.plot(le)
+plt.title('LE')
 plt.show()
 plt.plot(elbnd)
+plt.title('ELBND')
+plt.show()
+
+plt.plot(dw)
 plt.show()
 
